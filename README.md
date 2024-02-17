@@ -9,4 +9,4 @@ Use tools:
 
 Benefits:
 - Different environments according to the set tag in the commit
-- Build without timeline
+- Build without timeout
