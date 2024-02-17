@@ -1,0 +1,79 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:latest || exit 0']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+        'build',
+        '-t', 'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:$SHORT_SHA',
+        '-t', 'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:latest',
+        '--cache-from', 'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:latest',
+        '-f', './docker/php-fpm/Dockerfile-api.production',
+        '.'
+    ]
+    timeout: 1200s
+
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: /bin/sh
+    args:
+      - -c
+      - |
+        docker push gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:$SHORT_SHA
+        docker push gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:latest
+
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:latest || exit 0']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+        'build',
+        '-t', 'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:$SHORT_SHA',
+        '-t', 'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:latest',
+        '--cache-from', 'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:latest',
+        '-f', './docker/nginx/Dockerfile.production',
+        '.'
+    ]
+    timeout: 1200s
+
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: /bin/sh
+    args:
+      - -c
+      - |
+        docker push gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:$SHORT_SHA
+        docker push gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:latest
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: /bin/sh
+    secretEnv: ['GIT_ACCESS_TOKEN']
+    args:
+      - '-c'
+      - |
+        git clone https://mvnrs:$$GIT_ACCESS_TOKEN@github.com/MVnRs/rentsoft_ms_ob-deployment.git -b ${_CD_BRANCH}
+        echo "Updating image tag version ..."
+        cd rentsoft_ms_ob-deployment
+        sed "s/GOOGLE_CLOUD_PROJECT/$PROJECT_ID/g" ${_ENV}/deployment.yaml.tpl | \
+        sed "s/COMMIT_SHA/${SHORT_SHA}/g" > ${_ENV}/deployment.yaml
+        echo "Pushing changes to k8s manifest repo ..."
+        git config --global user.name "Automatic build"
+        git config --global user.email "dev@rentsoft.de"
+        git add -A
+        git commit -m "[Cloud Builder] Updated image tag $SHORT_SHA from commit ${COMMIT_SHA}."
+        git push https://mvnrs:$$GIT_ACCESS_TOKEN@github.com/MVnRs/rentsoft_ms_ob-deployment.git ${_CD_BRANCH}
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+
+timeout: 2400s
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_NUMBER/secrets/github-access-token/versions/latest
+      env: 'GIT_ACCESS_TOKEN'
+
+images: [
+    'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-php-fpm-api:latest',
+    'gcr.io/$PROJECT_ID/argo-${_ENV}-rentsoft-ms-ob-nginx-api:latest'
+]
